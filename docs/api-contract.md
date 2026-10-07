@@ -359,6 +359,9 @@ The polling endpoint. `{job_id}` must be a UUID.
 {
   "job_id": "3f2b1c9e-7a4d-4e21-9b6f-0c8d5a1e2f34",
   "title": "Student records audit",
+  "original_name": "students_dirty.csv",
+  "rule_set_id": "8c1d0b7a-2e5f-4a93-8b41-6d7e0f2a9c15",
+  "rule_set_name": "Student records",
   "status": "COMPLETED",
   "created_at": "2026-09-30T08:00:00Z",
   "started_at": "2026-09-30T08:00:02Z",
@@ -375,6 +378,12 @@ The polling endpoint. `{job_id}` must be a UUID.
 ```
 
 While active, `summary` is `null`, `completed_at` is `null`, `error` is `null`, and `available_downloads` is `["original"]`.
+
+`original_name`, `rule_set_id` and `rule_set_name` are display metadata: the
+uploaded filename and the checks that were applied. The two name fields are
+nullable — a job whose dataset or rule set row has since been removed still
+serializes, with `null` in place of the missing name — so the UI must tolerate
+them being absent rather than assume a string.
 
 | Status | Code | Message |
 |---|---|---|
@@ -396,40 +405,53 @@ Returns the stored `report.json` verbatim (see §7 for its shape).
 {
   "schema_version": "1.0",
   "job_id": "3f2b1c9e-7a4d-4e21-9b6f-0c8d5a1e2f34",
-  "generated_at": "2026-09-30T08:00:05Z",
-  "processing_seconds": 0.412,
-  "rules": {
+  "processed_at": "2026-09-30T08:00:05.412000Z",
+  "rules_snapshot": {
     "required_columns": ["student_id", "name", "age", "department"],
     "required_values": ["student_id", "name", "age", "department"],
     "unique_columns": ["student_id"],
     "numeric_ranges": {"age": {"min": 16.0, "max": 100.0, "integer": true}},
     "allowed_values": {"department": ["COMP", "IT", "EXTC"]}
   },
-  "counts": {
+  "summary": {
     "total_rows": 6,
     "valid_rows": 2,
     "rejected_rows": 4,
     "valid_percentage": 33.33
   },
-  "failure_counts": {
-    "REQUIRED_VALUE": 1,
-    "DUPLICATE_VALUE": 2,
-    "NUMERIC_RANGE": 1,
-    "ALLOWED_VALUE": 1,
-    "MISSING_COLUMN": 0
-  },
+  "failure_counts": [
+    {"code": "REQUIRED_VALUE", "column": "name", "message": "'name' must not be blank.", "count": 1},
+    {"code": "DUPLICATE_VALUE", "column": "student_id", "message": "'student_id' value 'S003' appears more than once in this file.", "count": 2},
+    {"code": "NUMERIC_RANGE", "column": "age", "message": "'age' '15' must be between 16 and 100 inclusive and a whole number.", "count": 1},
+    {"code": "ALLOWED_VALUE", "column": "department", "message": "'department' value 'MECH' is not one of: COMP, IT, EXTC.", "count": 1}
+  ],
   "dataset_errors": [],
   "error_preview": [
-    {"record_number": 2, "errors": [{"code": "REQUIRED_VALUE", "column": "name", "message": "'name' must not be blank."}]},
-    {"record_number": 3, "errors": [{"code": "NUMERIC_RANGE", "column": "age", "message": "'age' '15' must be between 16 and 100 inclusive and a whole number."}]},
-    {"record_number": 4, "errors": [{"code": "DUPLICATE_VALUE", "column": "student_id", "message": "'student_id' value 'S003' appears more than once in this file."}]},
-    {"record_number": 5, "errors": [{"code": "ALLOWED_VALUE", "column": "department", "message": "'department' value 'MECH' is not one of: COMP, IT, EXTC."}]}
+    {"record_number": 2, "values": {"student_id": "S002", "name": "", "age": "21", "department": "IT"},
+     "errors": [{"code": "REQUIRED_VALUE", "column": "name", "message": "'name' must not be blank."}]},
+    {"record_number": 3, "values": {"student_id": "S003", "name": "Rohan", "age": "15", "department": "COMP"},
+     "errors": [{"code": "DUPLICATE_VALUE", "column": "student_id", "message": "'student_id' value 'S003' appears more than once in this file."},
+                {"code": "NUMERIC_RANGE", "column": "age", "message": "'age' '15' must be between 16 and 100 inclusive and a whole number."}]},
+    {"record_number": 4, "values": {"student_id": "S003", "name": "Rohan", "age": "22", "department": "COMP"},
+     "errors": [{"code": "DUPLICATE_VALUE", "column": "student_id", "message": "'student_id' value 'S003' appears more than once in this file."}]},
+    {"record_number": 5, "values": {"student_id": "S005", "name": "Meera", "age": "24", "department": "MECH"},
+     "errors": [{"code": "ALLOWED_VALUE", "column": "department", "message": "'department' value 'MECH' is not one of: COMP, IT, EXTC."}]}
   ],
-  "error_preview_truncated": false
+  "error_preview_truncated": false,
+  "processing_duration_ms": 412
 }
 ```
 
-The preview above is abridged: row 3 also carries a `DUPLICATE_VALUE` error (S003), which is why `DUPLICATE_VALUE` is 2. The preview holds at most 100 rejected rows; `error_preview_truncated` says whether anything was cut.
+`failure_counts` is an **array**, one entry per rule-and-column that fired, in the
+order the rules run — not a mapping of code to count. Each entry carries its own
+`column` and `message` so the UI can render a failure without re-deriving either.
+Codes that never fired are absent rather than present with a count of `0`.
+
+Record 3 (S003) fails **two** rules, which is why the four `failure_counts`
+entries sum to 5 across 4 rejected rows. `error_preview` carries the rejected
+row's original `values` keyed by column, unfiltered and untrimmed, alongside
+every error on that row. The preview holds at most 100 rejected rows;
+`error_preview_truncated` says whether anything was cut.
 
 | Status | Code | Message |
 |---|---|---|
@@ -789,7 +811,7 @@ Response `201`:
 }
 ```
 
-Applied to `samples/students_dirty.csv` this yields 6 total rows, 2 valid, 4 rejected, 33.33% valid, and failure counts `REQUIRED_VALUE: 1`, `DUPLICATE_VALUE: 2`, `NUMERIC_RANGE: 1`, `ALLOWED_VALUE: 1`, `MISSING_COLUMN: 0`. Row 3 (S003, age 15) fails twice, which is why the counts sum to 5, not 4.
+Applied to `samples/students_dirty.csv` this yields 6 total rows, 2 valid, 4 rejected, 33.33% valid, and failure counts `REQUIRED_VALUE/name: 1`, `DUPLICATE_VALUE/student_id: 2`, `NUMERIC_RANGE/age: 1`, `ALLOWED_VALUE/department: 1`. Row 3 (S003, age 15) fails twice, which is why the counts sum to 5, not 4. `MISSING_COLUMN` is absent entirely, since no column is missing from that file.
 
 ---
 
@@ -833,13 +855,13 @@ Schema `1.0`. Always generated on `COMPLETED`, including a completed audit that 
 | `valid_rows` | Records failing zero rules |
 | `rejected_rows` | `total_rows - valid_rows` |
 | `valid_percentage` | `round(valid_rows / total_rows * 100, 2)` — **rounded to 2 decimal places**. `0.0` when there are no rows |
-| `failure_counts` | Per rule, the number of **distinct rows** that tripped that rule |
-| `error_preview` | At most 100 rejected records, each with its `record_number` and full error list |
+| `failure_counts` | **Array.** One entry per rule-and-column that fired: `{code, column, message, count}`, where `count` is the number of **distinct rows** that tripped that rule on that column |
+| `error_preview` | At most 100 rejected records, each with its `record_number`, the row's original `values` keyed by column, and its full error list |
 | `error_preview_truncated` | `true` when `rejected_rows` exceeds the preview |
 
-**`failure_counts` do not sum to `rejected_rows`.** A row failing two rules is counted once in each rule's total but only once in `rejected_rows`, so the per-rule sum is greater than or equal to the rejected count. On the dirty sample: 5 failure counts across 4 rejected rows. Label the UI accordingly — "failures by rule" is not "rejected rows by rule".
+**`failure_counts` do not sum to `rejected_rows`.** A row failing two rules is counted once in each rule-and-column entry but only once in `rejected_rows`, so the per-rule sum is greater than or equal to the rejected count. On the dirty sample: 5 failure counts across 4 rejected rows. Label the UI accordingly — "failures by rule" is not "rejected rows by rule".
 
-The same rounding and the same non-summation apply to `summary` on the job object and to `counts` in `report.json`.
+The same rounding and the same non-summation apply to `summary` on the job object and to `summary` in `report.json`.
 
 ---
 

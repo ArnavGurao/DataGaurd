@@ -97,13 +97,18 @@ def run(base: str, email: str, password: str) -> int:
             for key, value in expected.items():
                 failures += not check(key, job["summary"][key], value)
 
-            print("6. Checking the report and a download")
+            print("6. Checking the report and the job against the frontend contract")
             report = client.get(f"/api/jobs/{job_id}/report")
             failures += not check("report status", report.status_code, 200)
             if report.status_code == 200:
                 body = report.json()
                 failures += not check("report schema_version", body["schema_version"], "1.0")
-                failures += not check("report total_rows", body["counts"]["total_rows"], expected["total_rows"])
+                failures += not check(
+                    "report summary.total_rows", body["summary"]["total_rows"], expected["total_rows"]
+                )
+                failures += _check_frontend_report(body)
+
+            failures += _check_frontend_job(job, original_name=name, rule_set_id=rule_set_id)
 
             failures += not check(
                 "available_downloads",
@@ -111,6 +116,7 @@ def run(base: str, email: str, password: str) -> int:
                 ["original", "rejected", "report", "valid"],
             )
 
+            print("7. Checking a signed download")
             link = client.get(f"/api/jobs/{job_id}/downloads/rejected")
             failures += not check("download url status", link.status_code, 200)
             if link.status_code == 200:
@@ -125,6 +131,97 @@ def run(base: str, email: str, password: str) -> int:
 
     print("\n" + ("All checks passed." if not failures else f"{failures} check(s) FAILED."))
     return 1 if failures else 0
+
+
+def _check_frontend_report(body: dict) -> int:
+    """Exercise the exact expressions ``JobDetails.jsx`` runs over the report.
+
+    The dashboard renders straight off these keys, so a missing or wrongly-typed
+    field shows up as a blank panel or a TypeError in the browser rather than as
+    an HTTP error here. Mirroring the reads means a contract break fails the
+    smoke test instead of the demo.
+
+    ``docs/frontend-api-expectations.md`` is the frontend's statement of this
+    shape; this function is the backend's check that it still holds.
+    """
+    failures = 0
+
+    for key in (
+        "schema_version",
+        "job_id",
+        "processed_at",
+        "rules_snapshot",
+        "summary",
+        "failure_counts",
+        "dataset_errors",
+        "error_preview",
+        "processing_duration_ms",
+    ):
+        failures += not check(f"report.{key} present", key in body, True)
+
+    # `report.dataset_errors?.length > 0` then `.map(e => e.message)`
+    for error in body.get("dataset_errors") or []:
+        failures += not check(
+            f"dataset_errors message ({error.get('code')})", bool(error.get("message")), True
+        )
+
+    # `report.failure_counts.map(...)`. A dict here has no `.length`, so the UI
+    # silently falls back to "All checks passed" on a file full of failures.
+    counts = body.get("failure_counts")
+    failures += not check("failure_counts is a list", isinstance(counts, list), True)
+    for entry in counts if isinstance(counts, list) else []:
+        failures += not check(
+            f"failure_counts entry ({entry.get('code')}/{entry.get('column')})",
+            sorted(entry) == ["code", "column", "count", "message"],
+            True,
+        )
+        failures += not check(
+            f"failure_counts count is numeric ({entry.get('code')})",
+            isinstance(entry.get("count"), int),
+            True,
+        )
+
+    # `Object.entries(row.values).map(...)` raises on undefined.
+    for row in body.get("error_preview") or []:
+        number = row.get("record_number")
+        failures += not check(
+            f"error_preview[{number}].values is a non-empty map",
+            isinstance(row.get("values"), dict) and bool(row["values"]),
+            True,
+        )
+        failures += not check(f"error_preview[{number}].errors", bool(row.get("errors")), True)
+
+    # `<RuleSummary rules={report.rules_snapshot} />`
+    snapshot = body.get("rules_snapshot") or {}
+    for key in (
+        "required_columns",
+        "required_values",
+        "unique_columns",
+        "numeric_ranges",
+        "allowed_values",
+    ):
+        failures += not check(f"rules_snapshot.{key}", key in snapshot, True)
+
+    return failures
+
+
+def _check_frontend_job(job: dict, *, original_name: str, rule_set_id: str) -> int:
+    """The job fields the dashboard shows beside a dataset."""
+    failures = 0
+
+    failures += not check("job.original_name", job.get("original_name"), original_name)
+    failures += not check("job.rule_set_name is non-empty", bool(job.get("rule_set_name")), True)
+    failures += not check("job.rule_set_id", job.get("rule_set_id"), rule_set_id)
+
+    # The UI calls `job.summary.valid_percentage.toFixed(1)`, which a string
+    # would survive but render wrongly ("33.33" has no toFixed).
+    percentage = (job.get("summary") or {}).get("valid_percentage")
+    failures += not check(
+        "summary.valid_percentage is a number",
+        isinstance(percentage, (int, float)) and not isinstance(percentage, bool),
+        True,
+    )
+    return failures
 
 
 def main() -> None:

@@ -18,7 +18,12 @@ from app.services.reports import (
     build_report_json,
     build_valid_csv,
 )
-from app.services.rules import CODE_DUPLICATE_VALUE, CODE_NUMERIC_RANGE
+from app.services.rules import (
+    CODE_ALLOWED_VALUE,
+    CODE_DUPLICATE_VALUE,
+    CODE_NUMERIC_RANGE,
+    CODE_REQUIRED_VALUE,
+)
 from app.services.validator import parse_csv, validate
 from conftest import LIMITS
 
@@ -103,15 +108,15 @@ def test_report_describes_the_audit(sample, demo_rules):
 
     assert report["schema_version"] == REPORT_SCHEMA_VERSION
     assert report["job_id"] == "11111111-2222-3333-4444-555555555555"
-    assert report["counts"] == {
+    assert report["summary"] == {
         "total_rows": 6,
         "valid_rows": 2,
         "rejected_rows": 4,
         "valid_percentage": 33.33,
     }
-    assert report["rules"] == demo_rules.to_json()
-    assert report["processing_seconds"] == 1.235
-    assert report["generated_at"].endswith("Z")
+    assert report["rules_snapshot"] == demo_rules.to_json()
+    assert report["processing_duration_ms"] == 1235
+    assert report["processed_at"].endswith("Z")
     assert report["error_preview_truncated"] is False
 
 
@@ -125,7 +130,87 @@ def test_report_json_is_parseable_and_free_of_nan():
     # allow_nan=False means a stray NaN would raise here rather than emit
     # invalid JSON that a strict parser rejects.
     parsed_json = json.loads(payload)
-    assert parsed_json["counts"]["total_rows"] == 1
+    assert parsed_json["summary"]["total_rows"] == 1
+
+
+# --------------------------------------------------- frontend contract guard
+
+#: The keys docs/frontend-api-expectations.md promises the frontend can read.
+#: These are asserted as a set rather than one by one so a rename shows up here
+#: as a failing contract test instead of as a blank panel in the browser.
+FRONTEND_REPORT_KEYS = {
+    "schema_version",
+    "job_id",
+    "processed_at",
+    "rules_snapshot",
+    "summary",
+    "failure_counts",
+    "dataset_errors",
+    "error_preview",
+    "processing_duration_ms",
+}
+
+
+def test_report_exposes_every_key_the_frontend_reads(sample, demo_rules):
+    parsed, result = analyze(sample("students_dirty.csv"), demo_rules)
+    report = build_report(
+        job_id="job", rules=demo_rules.to_json(), result=result, processing_seconds=1.0
+    )
+
+    assert FRONTEND_REPORT_KEYS <= set(report)
+
+
+def test_failure_counts_are_grouped_by_code_and_column(sample, demo_rules):
+    """The frontend maps over this array, so it must be a list, not a mapping."""
+    parsed, result = analyze(sample("students_dirty.csv"), demo_rules)
+    report = build_report(
+        job_id="job", rules=demo_rules.to_json(), result=result, processing_seconds=0.0
+    )
+    counts = report["failure_counts"]
+
+    assert isinstance(counts, list)
+    assert all(set(entry) == {"code", "column", "message", "count"} for entry in counts)
+
+    grouped = {(entry["code"], entry["column"]): entry["count"] for entry in counts}
+    assert grouped == {
+        (CODE_REQUIRED_VALUE, "name"): 1,
+        (CODE_DUPLICATE_VALUE, "student_id"): 2,
+        (CODE_NUMERIC_RANGE, "age"): 1,
+        (CODE_ALLOWED_VALUE, "department"): 1,
+    }
+    # One row failing two rules appears in both entries, so the total exceeds
+    # the four rejected rows (README 8.2) — and every entry carries a message.
+    assert sum(entry["count"] for entry in counts) == 5
+    assert all(entry["message"] for entry in counts)
+
+
+def test_failure_counts_omit_codes_that_never_fired(sample, demo_rules):
+    parsed, result = analyze(sample("students_good.csv"), demo_rules)
+    report = build_report(
+        job_id="job", rules=demo_rules.to_json(), result=result, processing_seconds=0.0
+    )
+
+    assert report["failure_counts"] == []
+
+
+def test_error_preview_carries_the_rejected_rows_original_values(sample, demo_rules):
+    """The preview table renders one cell per column, so `values` must be a map."""
+    parsed, result = analyze(sample("students_dirty.csv"), demo_rules)
+    report = build_report(
+        job_id="job", rules=demo_rules.to_json(), result=result, processing_seconds=0.0
+    )
+
+    for entry in report["error_preview"]:
+        assert set(entry) == {"record_number", "values", "errors"}
+        assert isinstance(entry["values"], dict)
+        assert set(entry["values"]) == {"student_id", "name", "age", "department"}
+        assert entry["errors"]
+
+    # Record 3 is S003/Rohan: the duplicate id whose age is also out of range.
+    third = next(e for e in report["error_preview"] if e["record_number"] == 3)
+    assert third["values"]["student_id"] == "S003"
+    assert third["values"]["age"] == "15"
+    assert len(third["errors"]) == 2
 
 
 def test_error_preview_truncation_is_reported():

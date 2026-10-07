@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from ..auth import create_download_token, get_current_user
 from ..config import get_settings
@@ -43,6 +43,11 @@ from ..services.validator import ValidationInputError, inspect_headers
 logger = logging.getLogger("dataguard.jobs")
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+#: Every route that serializes a job needs the dataset's filename and the rule
+#: set's name for display. Loading them here keeps a 100-job page at one query
+#: instead of one per row.
+_JOB_METADATA = (joinedload(Job.dataset), joinedload(Job.rule_set))
 
 #: Read the upload in bounded chunks so an oversized body is refused mid-stream
 #: rather than after it has all been buffered.
@@ -144,6 +149,7 @@ def list_jobs(
         db.execute(
             select(Job)
             .where(Job.owner_id == user.id)
+            .options(*_JOB_METADATA)
             .order_by(Job.created_at.desc())
             .limit(limit)
             .offset(offset)
@@ -225,7 +231,7 @@ def _owned_job(db: Session, user: User, job_id: uuid.UUID) -> Job:
     cannot be used to confirm that another user's job exists (README 9.6).
     """
     job = db.execute(
-        select(Job).where(Job.id == job_id, Job.owner_id == user.id)
+        select(Job).where(Job.id == job_id, Job.owner_id == user.id).options(*_JOB_METADATA)
     ).scalar_one_or_none()
     if job is None:
         raise ApiError(404, CODE_NOT_FOUND, "Job not found.")
@@ -268,9 +274,18 @@ def _to_out(job: Job) -> JobOut:
             code=job.error_code, message=job.error_message or "", failure_kind=job.failure_kind
         )
 
+    # Both relationships are eager-loaded by every caller (_JOB_METADATA), so
+    # this costs no extra query. They can still be absent on a job whose dataset
+    # or rule set was removed, which is why the fields are nullable.
+    dataset = job.dataset
+    rule_set = job.rule_set
+
     return JobOut(
         job_id=job.id,
         title=job.title,
+        original_name=dataset.original_name if dataset else None,
+        rule_set_id=job.rule_set_id,
+        rule_set_name=rule_set.name if rule_set else None,
         status=job.status,
         created_at=job.created_at,
         started_at=job.started_at,

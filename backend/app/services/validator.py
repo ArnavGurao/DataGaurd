@@ -427,8 +427,18 @@ def _summarize(
             break
         # Record number counts logical records, not physical lines: a quoted
         # field may span several lines (README 12.2).
+        #
+        # ``values`` is what makes the preview useful on its own: the rejected
+        # row's original cells, keyed by column, so a reader can see the bad
+        # value next to the reason. Without it the preview carries only an
+        # opaque record number. Original (untrimmed) values are used, matching
+        # the rejected export.
         preview.append(
-            {"record_number": position + 1, "errors": [error.to_json() for error in errors]}
+            {
+                "record_number": position + 1,
+                "values": dict(zip(parsed.headers, parsed.rows[position])),
+                "errors": [error.to_json() for error in errors],
+            }
         )
 
     return ValidationResult(
