@@ -17,3 +17,6 @@ backend/runtime/
 *.key
 *.log
 .DS_Store
+
+test-results/
+playwright-report/

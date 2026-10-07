@@ -1,6 +1,8 @@
 # DataGuard: Complete Three-Person Cloud Mini-Project Guide
 
-> This is an implementation guide, not an already-built application. Code blocks are examples to implement in the indicated files. Commands that depend on application files become runnable after your team creates those files. No AWS resources have been created.
+> The React frontend is now implemented in `Frontend/`, with an interactive browser demo and a live API adapter. The backend and cloud sections below remain an implementation guide. No AWS resources have been created.
+
+**Try the frontend:** run `npm.cmd install` and `npm.cmd run dev` from `Frontend/`, then open http://127.0.0.1:5173. See [Frontend/README.md](Frontend/README.md) for setup, demo behavior, verification, and backend integration. The response shapes expected by the frontend are documented in [docs/api-contract.md](docs/api-contract.md).
 
 **Project:** Cloud-Based CSV Dataset Validation and Quality Reporting Platform.
 
@@ -946,4 +948,3 @@ If original storage fails, return an actionable 503 and do not create a job. If 
 ### 13.8 Completion checkpoint
 
 API, worker, and UI must work locally before cloud integration. Restart the worker during a job, wait for its lease to expire, and verify it can finish without duplicate results. Then switch settings to S3/SQS and repeat the same workflow.
-
