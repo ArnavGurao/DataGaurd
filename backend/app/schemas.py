@@ -105,10 +105,19 @@ class JobErrorOut(BaseModel):
 
 
 class JobOut(BaseModel):
-    """The shape returned by the job status, list and upload endpoints."""
+    """The shape returned by the job status, list and upload endpoints.
+
+    ``original_name`` and ``rule_set_name`` are display metadata the frontend
+    shows beside a job; both are nullable because a job whose rule set or
+    dataset row has since been removed should still render. ``rule_set_id``
+    lets the UI link a job back to the checks that produced it.
+    """
 
     job_id: uuid.UUID
     title: str
+    original_name: str | None = None
+    rule_set_id: uuid.UUID | None = None
+    rule_set_name: str | None = None
     status: str
     created_at: datetime
     started_at: datetime | None = None

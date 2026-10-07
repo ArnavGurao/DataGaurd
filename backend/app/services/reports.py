@@ -71,6 +71,43 @@ def build_rejected_csv(parsed: ParsedCsv, result: ValidationResult) -> bytes:
     return _encode(rows)
 
 
+def _failure_counts(result: ValidationResult) -> list[dict[str, Any]]:
+    """Failures grouped by ``(code, column)``, in first-seen order.
+
+    ``ValidationResult.failure_counts`` is a flat per-code tally, which is enough
+    to count but not enough to *explain*: the report needs the column and the
+    human-readable message that go with each count, and the frontend renders one
+    entry per code-and-column (README 12.2).
+
+    A row counts once per rule-and-column however many times that rule fired on
+    it, so one row failing two rules appears in both entries. These therefore
+    need not sum to ``rejected_rows`` (README 8.2).
+    """
+    grouped: dict[tuple[str, str | None], dict[str, Any]] = {}
+
+    for errors in result.row_errors:
+        seen: set[tuple[str, str | None]] = set()
+        for error in errors:
+            key = (error.code, error.column)
+            if key in seen:
+                continue
+            seen.add(key)
+            entry = grouped.get(key)
+            if entry is None:
+                # Insertion order is the order rules fire in, so the report
+                # lists failures the same way for every file.
+                grouped[key] = {
+                    "code": error.code,
+                    "column": error.column,
+                    "message": error.message,
+                    "count": 1,
+                }
+            else:
+                entry["count"] += 1
+
+    return list(grouped.values())
+
+
 def build_report(
     *,
     job_id: str,
@@ -79,26 +116,31 @@ def build_report(
     processing_seconds: float,
     generated_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """The report payload, before serialization."""
+    """The report payload, before serialization.
+
+    Key names are the ones the frontend reads (``docs/frontend-api-expectations.md``):
+    ``processed_at``, ``rules_snapshot``, ``summary``, ``processing_duration_ms``.
+    The parameter names stay in their natural internal units — seconds, an
+    explicit timestamp — and this function is the single place they are mapped
+    onto the wire format.
+    """
     generated_at = generated_at or datetime.now(timezone.utc)
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
         "job_id": str(job_id),
-        "generated_at": _iso(generated_at),
-        "processing_seconds": round(processing_seconds, 3),
-        "rules": rules,
-        "counts": {
+        "processed_at": _iso(generated_at),
+        "rules_snapshot": rules,
+        "summary": {
             "total_rows": result.total_rows,
             "valid_rows": result.valid_rows,
             "rejected_rows": result.rejected_rows,
             "valid_percentage": result.valid_percentage,
         },
-        # Counts are per rule and per row: one row failing two rules counts in
-        # both, so these need not sum to rejected_rows (README 8.2).
-        "failure_counts": result.failure_counts,
+        "failure_counts": _failure_counts(result),
         "dataset_errors": result.dataset_errors,
         "error_preview": result.error_preview,
         "error_preview_truncated": result.rejected_rows > len(result.error_preview),
+        "processing_duration_ms": round(processing_seconds * 1000),
     }
 
 
