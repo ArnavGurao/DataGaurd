@@ -1,0 +1,36 @@
+# DataGuard backend dependencies.
+#
+# Versions are pinned exactly: this is the set the project was built and tested
+# against, so a teammate gets the same behaviour instead of whatever is newest
+# on the day they install (README 9.1). Transitive dependencies are left for
+# pip to resolve from these pins, except where an extra ranges over them.
+#
+# Teammates install with:
+#   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+#
+# Built and verified on CPython 3.13 with PostgreSQL 16.
+
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+
+pandas==3.0.6
+python-multipart==0.0.32
+
+sqlalchemy==2.1.3
+psycopg[binary]==3.3.6
+alembic==1.20.0
+
+pydantic==2.13.5
+pydantic-settings==2.15.0
+
+# Cloud adapters. boto3 is imported by the S3/SQS/SNS paths; in local mode the
+# application never reaches those, so a missing credential is not an error here.
+boto3==1.43.108
+
+pwdlib[argon2]==0.3.1
+# pwdlib's argon2 extra accepts a range, so pin the backend it selects.
+argon2-cffi==25.1.0
+PyJWT==2.15.1
+
+pytest==9.1.1
+httpx==0.28.1
