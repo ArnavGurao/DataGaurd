@@ -16,9 +16,9 @@ Where the code and the README differ, the code wins and the difference is listed
 | Authentication | `Authorization: Bearer <access_token>` on protected routes |
 | Token lifetime | 30 minutes (`JWT_EXPIRE_MINUTES=30`). Held in React memory only; reload means re-login |
 | Ownership | A resource belonging to another user returns **404**, never 403 — its existence is not disclosed |
-| Errors | One envelope, §2. No route returns an out-of-shape error body (one exception: `/api/ready`, §1.2) |
+| Errors | One envelope, §2. **Every** failure — including 500 and every 503 — uses it. No route has an out-of-shape error body |
 
-Limits enforced server-side (README 1.2, `app/config.py` defaults): 5 MiB upload, 20,000 data rows, 50 columns, UTF-8 / UTF-8-with-BOM, comma-separated, one header row. The last two are worker-enforced; the rest are checked at upload.
+Limits enforced server-side (README 1.2, `app/config.py` defaults): 5 MiB upload, 20,000 data rows, 50 columns, UTF-8 / UTF-8-with-BOM, comma-separated, one header row. **Which layer enforces what decides where you see the error:** size, column count, encoding and header structure are checked at upload (so `POST /api/jobs` answers `413`/`422` and queues no job), while the 20,000-row limit is worker-only (`ROW_LIMIT_EXCEEDED` on a `FAILED` job) because knowing the row count means reading the whole file. See §2 for the full code table.
 
 ### Endpoint index
 
@@ -72,11 +72,18 @@ Readiness. Runs `SELECT 1` against PostgreSQL. Reveals nothing about *why* it fa
 {"status": "ok", "database": "ok"}
 ```
 
+The 200 is a success response and stays bare — it is not wrapped in an `error`
+object.
+
+Failure `503` uses the standard envelope, like every other failure:
+
 ```json
-{"status": "unavailable", "database": "unavailable"}
+{"error": {"code": "STORAGE_UNAVAILABLE", "message": "The database is unavailable. Try again shortly."}}
 ```
 
-> **Not the standard error envelope.** `/api/ready` returns its 503 body directly, bypassing the error handler. See §9.
+> The code is `STORAGE_UNAVAILABLE` because README §9.7 maps 503 to "dependency
+> unavailable" as a single status; the message names the database. Branch on the
+> HTTP status, not on this code, if you only need to know "not ready".
 
 ### 1.3 `POST /api/auth/register`
 
@@ -569,6 +576,7 @@ These appear at upload as `422` (header inspection only) and/or as the `error.co
 | `DUPLICATE_HEADERS` | 422 | `failure_kind=INPUT` | A header repeats after trimming |
 | `TOO_MANY_COLUMNS` | 422 | `failure_kind=INPUT` | More than 50 columns |
 | `ROW_LIMIT_EXCEEDED` | not checked | `failure_kind=INPUT` | More than 20,000 data rows (worker only) |
+| `SIZE_LIMIT_EXCEEDED` | not checked | `failure_kind=INPUT` | Body over 5 MiB (worker only — the upload path refuses it earlier with `413 FILE_TOO_LARGE`) |
 | `STORAGE_UNAVAILABLE` | `503 STORAGE_UNAVAILABLE` | `failure_kind=RETRY_EXHAUSTED` after 3 attempts | Storage read/write failed while processing |
 | `FILE_TOO_LARGE` | `413 FILE_TOO_LARGE` | — | Upload exceeds the size limit |
 
@@ -840,7 +848,7 @@ The same rounding and the same non-summation apply to `summary` on the job objec
 | # | Difference | Impact |
 |---|---|---|
 | 1 | `RULE_SET_INVALID` is defined in `errors.py` but never emitted; the rule-set router passes the specific `RuleSetError` code through instead | Frontend must branch on the §6 codes; `RULE_SET_INVALID` will never appear |
-| 2 | `GET /api/ready` returns a bare `{"status": "unavailable", "database": "unavailable"}` on 503, not the `{"error": {...}}` envelope, because it builds its `JSONResponse` directly | The API helper's `data.error?.message` is `undefined` for this one route; use the HTTP status |
+| 2 | A worker-side oversize failure reports `error.code = "SIZE_LIMIT_EXCEEDED"`, while the upload path reports HTTP `413 FILE_TOO_LARGE` | Two different layers, deliberately two different strings — a job's `error.code` is never the API's 413 code, so branching on the code can always tell them apart |
 | 3 | README 9.7's rule example shows integer bounds (`min: 16`); the stored and echoed form is `16.0` | Display-only; validation behaviour is identical. Compare bounds numerically, not as strings |
 | 4 | README 11.4 offers "failed input job **or** early 422" for a header-only file; the code always chooses the early 422 | It arrives as `422` with `error.code = "EMPTY_DATASET"`, not `VALIDATION_ERROR` |
 | 5 | README 9.7 does not name the upload-time CSV validation codes beyond "early CSV checks" | §2 lists all seven that can appear on `POST /api/jobs` |
