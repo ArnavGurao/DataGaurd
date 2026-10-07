@@ -1,0 +1,41 @@
+# Local PostgreSQL 16 for development (README 9.3).
+#
+# Started from backend/, so Compose picks up backend/.env automatically and the
+# role, database and password below come from the gitignored file — no
+# credentials are stored here. DB_PASSWORD is required: Compose stops with an
+# actionable error rather than inventing a default that would silently mismatch
+# the application's configuration.
+#
+#   cd backend
+#   docker compose up -d
+#   docker compose ps
+#   docker compose down          # keeps the data
+#   docker compose down -v       # deletes the volume as well
+#
+# This matches README 9.3: role dataguard_app, database dataguard owned by it.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: dataguard-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-dataguard_app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is missing - copy .env.example to .env and set it}
+      POSTGRES_DB: ${DB_NAME:-dataguard}
+    ports:
+      # Bound to loopback only: the database is never exposed off the laptop.
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - dataguard-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `alembic upgrade head` needs the server accepting connections, which is
+      # later than the container merely being started.
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dataguard_app} -d ${DB_NAME:-dataguard}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  # Named, so `docker compose down` does not discard the data.
+  dataguard-pgdata:
