@@ -149,24 +149,56 @@ class S3Storage(StorageBackend):
 
     def _client(self):
         import boto3  # lazy: local development needs no boto3 session
+        from botocore.config import Config
 
-        return boto3.client("s3", region_name=self._region)
+        return boto3.client(
+            "s3",
+            region_name=self._region,
+            config=Config(
+                connect_timeout=5,
+                read_timeout=30,
+                retries={"mode": "standard", "max_attempts": 3},
+            ),
+        )
 
     def save_bytes(self, key: str, data: bytes) -> None:
-        raise NotImplementedError("Owner C: implement S3 put_object with bounded retries.")
+        self._client().put_object(Bucket=self.bucket, Key=key, Body=data)
 
     def read_bytes(self, key: str) -> bytes:
-        raise NotImplementedError("Owner C: implement S3 get_object.")
+        try:
+            response = self._client().get_object(Bucket=self.bucket, Key=key)
+        except Exception as exc:
+            if getattr(exc, "response", {}).get("Error", {}).get("Code") in {"404", "NoSuchKey"}:
+                raise FileNotFoundError(key) from exc
+            raise StorageError(f"Could not read S3 object: {key}") from exc
+        return response["Body"].read()
 
     def delete_object(self, key: str) -> None:
-        raise NotImplementedError("Owner C: implement S3 delete_object.")
+        try:
+            self._client().delete_object(Bucket=self.bucket, Key=key)
+        except Exception as exc:
+            raise StorageError(f"Could not delete S3 object: {key}") from exc
 
     def exists(self, key: str) -> bool:
-        raise NotImplementedError("Owner C: implement S3 head_object.")
+        try:
+            self._client().head_object(Bucket=self.bucket, Key=key)
+        except Exception as exc:
+            if getattr(exc, "response", {}).get("Error", {}).get("Code") in {"404", "NoSuchKey"}:
+                return False
+            raise StorageError(f"Could not check S3 object: {key}") from exc
+        return True
 
     def get_download_url(self, key: str, filename: str, ttl_seconds: int) -> str:
-        raise NotImplementedError(
-            "Owner C: return a presigned GET URL with an attachment filename."
+        if ttl_seconds <= 0:
+            raise ValueError("Download URL TTL must be positive.")
+        return self._client().generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": self.bucket,
+                "Key": key,
+                "ResponseContentDisposition": f'attachment; filename="{Path(filename).name}"',
+            },
+            ExpiresIn=ttl_seconds,
         )
 
 

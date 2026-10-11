@@ -135,25 +135,53 @@ class SqsJobQueue(JobQueue):
 
     def _client(self):
         import boto3  # lazy: local development needs no AWS session
+        from botocore.config import Config
 
-        return boto3.client("sqs", region_name=self._region)
+        return boto3.client(
+            "sqs",
+            region_name=self._region,
+            config=Config(
+                connect_timeout=5,
+                read_timeout=30,
+                retries={"mode": "standard", "max_attempts": 3},
+            ),
+        )
 
     def send(self, job_id: uuid.UUID) -> None:
-        raise NotImplementedError(
-            "Owner C: send_message with only the job_id as the body (README 13.3 step 4)."
-        )
+        self._client().send_message(QueueUrl=self.queue_url, MessageBody=str(job_id))
 
     def receive(self, *, wait_seconds: int = DEFAULT_WAIT_SECONDS, max_messages: int = 1) -> list[QueueMessage]:
-        raise NotImplementedError(
-            "Owner C: receive_message with WaitTimeSeconds=20 and MaxNumberOfMessages=1; "
-            "parse and validate the message body's job_id, and never trust it for paths "
-            "or rules — load those from RDS (README 13.4 step 2)."
+        if not 0 <= wait_seconds <= 20 or not 1 <= max_messages <= 10:
+            raise ValueError("Invalid SQS receive limits.")
+        response = self._client().receive_message(
+            QueueUrl=self.queue_url,
+            WaitTimeSeconds=wait_seconds,
+            MaxNumberOfMessages=max_messages,
+            AttributeNames=["ApproximateReceiveCount"],
         )
+        messages: list[QueueMessage] = []
+        for message in response.get("Messages", []):
+            try:
+                job_id = uuid.UUID(message["Body"])
+            except (KeyError, ValueError, AttributeError):
+                logger.error("Ignoring SQS message with invalid job ID.")
+                continue
+            count = message.get("Attributes", {}).get("ApproximateReceiveCount")
+            messages.append(
+                QueueMessage(
+                    job_id=job_id,
+                    receipt_handle=message.get("ReceiptHandle"),
+                    receive_count=int(count) if count is not None else None,
+                )
+            )
+        return messages
 
     def delete(self, message: QueueMessage) -> None:
-        raise NotImplementedError(
-            "Owner C: delete_message using the receipt handle, and only after the "
-            "completion transaction commits (README 13.4 step 9)."
+        if not message.receipt_handle:
+            raise ValueError("SQS message has no receipt handle.")
+        self._client().delete_message(
+            QueueUrl=self.queue_url,
+            ReceiptHandle=message.receipt_handle,
         )
 
 

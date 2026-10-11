@@ -104,13 +104,31 @@ class SnsNotifier(Notifier):
 
     def _client(self):
         import boto3
+        from botocore.config import Config
 
-        return boto3.client("sns", region_name=self._region)
+        return boto3.client(
+            "sns",
+            region_name=self._region,
+            config=Config(
+                connect_timeout=5,
+                read_timeout=15,
+                retries={"mode": "standard", "max_attempts": 3},
+            ),
+        )
 
     def send(self, event: NotificationEvent, job: Job) -> None:
-        raise NotImplementedError(
-            "Owner C: publish a plain-text operator notice containing the job ID and "
-            "event ID so a duplicate delivery after a crash is recognisable."
+        message = (
+            "DataGuard operator notification\n"
+            f"Event: {event.event_type}\n"
+            f"Event ID: {event.id}\n"
+            f"Job ID: {job.id}\n"
+            f"Job status: {job.status}\n"
+            f"Attempts: {job.attempts}"
+        )
+        self._client().publish(
+            TopicArn=self.topic_arn,
+            Subject=f"DataGuard: {event.event_type}",
+            Message=message,
         )
 
 
