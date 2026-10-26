@@ -1,4 +1,4 @@
-# DataGuard: Complete Three-Person Cloud Mini-Project Guide
+# DataGuard: Cloud Mini-Project Guide
 
 > The React frontend is now implemented in `Frontend/`, with an interactive browser demo and a live API adapter. The backend and cloud sections below remain an implementation guide. No AWS resources have been created.
 
