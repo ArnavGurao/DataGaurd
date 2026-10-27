@@ -20,3 +20,7 @@ backend/runtime/
 
 test-results/
 playwright-report/
+
+# Local deployment inventory, release archives, and isolated test temp files.
+deploy/.state/
+deploy/.tooling/

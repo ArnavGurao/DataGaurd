@@ -112,7 +112,7 @@ class DatabaseJobQueue(JobQueue):
 
 
 class SqsJobQueue(JobQueue):
-    """AWS SQS implementation — owner C fills this in (README 13.3).
+    """AWS SQS implementation (README 13.3).
 
     Boto3 takes temporary credentials from the EC2 instance role. Configure
     bounded connection/read timeouts and a small retry budget so a hung SQS

@@ -5,6 +5,8 @@ import { Button, ErrorBox } from '../components/UI.jsx';
 
 export function Auth({ onLogin, onDemo, notice }) {
   const [register, setRegister] = useState(false),
+    [verifying, setVerifying] = useState(false),
+    [code, setCode] = useState(''),
     [email, setEmail] = useState(''),
     [password, setPassword] = useState(''),
     [visible, setVisible] = useState(false),
@@ -18,14 +20,25 @@ export function Auth({ onLogin, onDemo, notice }) {
     setError(null);
     setMessage(null);
     try {
-      if (register) {
-        await apiRequest('/auth/register', {
+      if (verifying) {
+        const result = await apiRequest('/auth/verify-email', {
+          method: 'POST', body: { email: email.trim(), code },
+        });
+        setVerifying(false); setRegister(false); setCode('');
+        setMessage(result.message);
+      } else if (register) {
+        const result = await apiRequest('/auth/register', {
           method: 'POST',
           body: { email: email.trim(), password },
         });
         setRegister(false);
         setPassword('');
-        setMessage('Account created. Sign in to open your workspace.');
+        setVerifying(result.email_verification_required);
+        setMessage(result.email_verification_required
+          ? result.verification_delivery === 'unavailable'
+            ? 'Account created, but the verification email could not be delivered. Contact the project team to approve your demo email address, then request a new code.'
+            : 'Account created. Check your inbox for a six-digit code. Codes expire in 15 minutes. If it does not arrive, use Send a new code.'
+          : 'Account created. Sign in to open your workspace.');
       } else {
         const session = await apiRequest('/auth/login', {
           method: 'POST',
@@ -35,10 +48,24 @@ export function Auth({ onLogin, onDemo, notice }) {
         onLogin(session.access_token, user);
       }
     } catch (e) {
+      if (e.code === 'EMAIL_NOT_VERIFIED') {
+        setVerifying(true); setPassword('');
+      }
       setError(e);
     } finally {
       setBusy(false);
     }
+  }
+  async function resend() {
+    if (busy) return;
+    setBusy(true); setError(null);
+    try {
+      const result = await apiRequest('/auth/resend-verification', {
+        method: 'POST', body: { email: email.trim() },
+      });
+      setMessage(result.message);
+    } catch (e) { setError(e); }
+    finally { setBusy(false); }
   }
   return (
     <div className="auth-page">
@@ -81,9 +108,9 @@ export function Auth({ onLogin, onDemo, notice }) {
           <span className="auth-mini-mark">
             <ShieldCheck size={27} />
           </span>
-          <h2>{register ? 'Start with confidence.' : 'Welcome back.'}</h2>
+          <h2>{verifying ? 'Verify your email.' : register ? 'Start with confidence.' : 'Welcome back.'}</h2>
           <p>
-            {register
+            {verifying ? 'Enter the code sent to your inbox to activate your workspace.' : register
               ? 'Create an account for your DataGuard workspace.'
               : 'Sign in to your connected DataGuard workspace.'}
           </p>
@@ -104,7 +131,12 @@ export function Auth({ onLogin, onDemo, notice }) {
               onChange={(e) => setEmail(e.target.value)}
             />
           </label>
-          <label className="field">
+          {verifying ? <label className="field">
+            Verification code
+            <input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}"
+              maxLength={6} placeholder="Six-digit code" value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
+          </label> : <label className="field">
             Password
             <div className="password-input">
               <input
@@ -124,22 +156,27 @@ export function Auth({ onLogin, onDemo, notice }) {
                 {visible ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
-          </label>
+          </label>}
           <Button className="full-width" disabled={busy} type="submit">
             {busy ? <LoaderCircle size={17} className="spin" /> : <ArrowRight size={17} />}{' '}
-            {busy ? 'Please wait…' : register ? 'Create account' : 'Sign in'}
+            {busy ? 'Please wait…' : verifying ? 'Verify email' : register ? 'Create account' : 'Sign in'}
           </Button>
+          {verifying && <Button type="button" variant="secondary" disabled={busy || !email.trim()} onClick={resend}>
+            Send a new code
+          </Button>}
           <p className="auth-switch">
             {register ? 'Already have an account?' : 'New to DataGuard?'}{' '}
             <button
               type="button"
               className="text-button"
               onClick={() => {
-                setRegister(!register);
+                if (verifying) { setVerifying(false); setRegister(false); }
+                else setRegister(!register);
                 setError(null);
+                setMessage(null);
               }}
             >
-              {register ? 'Sign in' : 'Create an account'}
+              {verifying || register ? 'Sign in' : 'Create an account'}
             </button>
           </p>
           <div className="auth-divider">

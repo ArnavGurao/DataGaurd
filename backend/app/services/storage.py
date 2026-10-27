@@ -130,7 +130,7 @@ class LocalStorage(StorageBackend):
 
 
 class S3Storage(StorageBackend):
-    """AWS S3 implementation — owner C fills this in (README 12.1).
+    """AWS S3 implementation (README 12.1).
 
     Boto3 picks up temporary credentials from the EC2 instance role; no access
     keys are read from configuration or embedded anywhere (README 2, 18).
@@ -155,6 +155,8 @@ class S3Storage(StorageBackend):
             "s3",
             region_name=self._region,
             config=Config(
+                signature_version="s3v4",
+                s3={"addressing_style": "virtual"},
                 connect_timeout=5,
                 read_timeout=30,
                 retries={"mode": "standard", "max_attempts": 3},
@@ -162,7 +164,8 @@ class S3Storage(StorageBackend):
         )
 
     def save_bytes(self, key: str, data: bytes) -> None:
-        self._client().put_object(Bucket=self.bucket, Key=key, Body=data)
+        content_type = "application/json" if key.endswith(".json") else "text/csv"
+        self._client().put_object(Bucket=self.bucket, Key=key, Body=data, ContentType=content_type)
 
     def read_bytes(self, key: str) -> bytes:
         try:

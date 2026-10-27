@@ -62,6 +62,18 @@ class UserOut(BaseModel):
 
     id: uuid.UUID
     email: str
+    email_verification_required: bool = False
+    email_verified_at: datetime | None = None
+    verification_delivery: str | None = None
+
+
+class VerificationRequest(BaseModel):
+    email: str = Field(max_length=320)
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str = Field(max_length=320)
 
 
 class TokenOut(BaseModel):

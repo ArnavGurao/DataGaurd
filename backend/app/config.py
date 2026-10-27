@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     sns_topic_arn: str | None = None
     ssm_parameter_prefix: str = "/dataguard"
     download_url_ttl_seconds: int = 60
+    email_verification_required: bool = False
+    email_delivery_mode: Literal["local", "ses"] = "local"
+    verification_sender: str = ""
+    ingestion_secret: str = ""
 
     @model_validator(mode="after")
     def _validate_required(self) -> "Settings":
@@ -105,6 +109,8 @@ class Settings(BaseSettings):
         # jobs table as a queue that no other replica can see. README 12.1
         # forbids that silent fallback, so refuse to start instead.
         if self.app_env != "local":
+            if self.email_verification_required and (self.email_delivery_mode != "ses" or not self.verification_sender):
+                raise ValueError("AWS email verification requires SES and a verified sender.")
             required_modes = {"STORAGE_MODE": (self.storage_mode, "s3"), "QUEUE_MODE": (self.queue_mode, "sqs")}
             wrong = [f"{name}={want}" for name, (have, want) in required_modes.items() if have != want]
             if wrong:

@@ -34,7 +34,10 @@ export function validateRules(rules) {
   if (referenced.some((c) => !cols.includes(c)))
     fail('INVALID_RULES', 'Include every rule column in Required columns.');
   for (const range of Object.values(rules.numeric_ranges)) {
-    if (!Number.isFinite(range.min) || !Number.isFinite(range.max) || range.min > range.max)
+    if ((range.min === undefined && range.max === undefined) ||
+        (range.min !== undefined && !Number.isFinite(range.min)) ||
+        (range.max !== undefined && !Number.isFinite(range.max)) ||
+        (range.min !== undefined && range.max !== undefined && range.min > range.max))
       fail('INVALID_RULES', 'Numeric bounds must be finite and minimum cannot exceed maximum.');
   }
   if (
@@ -136,7 +139,7 @@ export function auditCSV(text, rules, jobId = 'preview') {
           add(
             'NUMERIC_RANGE',
             column,
-            `${column} must be ${range.integer ? 'an integer' : 'a number'} from ${range.min} to ${range.max}.`,
+            `${column} must be ${range.integer ? 'an integer' : 'a number'} from ${range.min ?? 'no lower bound'} to ${range.max ?? 'no upper bound'}.`,
           );
         }
       });

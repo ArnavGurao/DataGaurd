@@ -17,7 +17,7 @@ from sqlalchemy import text
 from .config import get_settings
 from .database import session_scope
 from .errors import CODE_STORAGE_UNAVAILABLE, error_body, register_exception_handlers
-from .routers import auth, downloads, jobs, rules
+from .routers import auth, downloads, jobs, rules, ingestion
 from .services.dispatcher import Publisher
 from .services.notifier import get_notifier
 
@@ -50,6 +50,7 @@ app.include_router(auth.router)
 app.include_router(rules.router)
 app.include_router(jobs.router)
 app.include_router(downloads.router)
+app.include_router(ingestion.router)
 
 
 @app.get("/api/health", tags=["health"])

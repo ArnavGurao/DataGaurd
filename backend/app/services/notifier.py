@@ -85,7 +85,7 @@ class LoggingNotifier(Notifier):
 
 
 class SnsNotifier(Notifier):
-    """AWS SNS implementation — owner C fills this in (README 13.6).
+    """AWS SNS implementation (README 13.6).
 
     Publishing retries are bounded; on exhaustion the event stays PENDING for
     the next flush.

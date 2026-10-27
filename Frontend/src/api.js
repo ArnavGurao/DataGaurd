@@ -48,6 +48,9 @@ export function createApiService(token) {
       return Array.isArray(data) ? data : data.items;
     },
     createRule: (body) => request('/rule-sets', { method: 'POST', body }),
+    listSources: () => request('/ingestion/sources'),
+    createSource: (body) => request('/ingestion/sources', { method: 'POST', body }),
+    disableSource: (id) => request(`/ingestion/sources/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     createJob: (body) => request('/jobs', { method: 'POST', body }),
     getJob: (id, signal) => request(`/jobs/${encodeURIComponent(id)}`, { signal }),
     getReport: (id, signal) => request(`/jobs/${encodeURIComponent(id)}/report`, { signal }),

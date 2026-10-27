@@ -13,6 +13,7 @@ import {
 import { Button, CheckItem, ErrorBox, PageHeading } from '../components/UI.jsx';
 import { navigate, useWorkspace } from '../context.jsx';
 import { DIRTY_CSV, GOOD_CSV, LIMITS, saveFile } from '../lib/validation.js';
+import { IngestionFolders } from '../components/IngestionFolders.jsx';
 
 export function Upload() {
   const { rules, service, refresh, handleError, mode } = useWorkspace();
@@ -266,6 +267,7 @@ export function Upload() {
           )}
         </aside>
       </div>
+      {mode === 'api' && <IngestionFolders />}
     </>
   );
 }

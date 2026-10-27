@@ -1,10 +1,16 @@
 # DataGuard: Cloud Mini-Project Guide
 
-> The React frontend is now implemented in `Frontend/`, with an interactive browser demo and a live API adapter. The backend and cloud sections below remain an implementation guide. No AWS resources have been created.
+> The frontend, backend and AWS adapters are implemented. The maintained AWS deployment provisions the infrastructure, deploys the complete application and verifies cloud workflows; see [deploy/aws/README.md](deploy/aws/README.md).
+
+**Deploy on AWS:** follow [deploy/aws/README.md](deploy/aws/README.md). It replaces the older manual cloud setup in this project-planning guide with CloudFormation, automated deployment, HTTPS, monitoring, end-to-end verification and cleanup instructions.
+
+**Live application:** [Open DataGuard](https://13.234.189.176). Deployment details and verification results are recorded in [docs/AWS_DEPLOYMENT_STATUS.md](docs/AWS_DEPLOYMENT_STATUS.md).
 
 **Try the frontend:** run `npm.cmd install` and `npm.cmd run dev` from `Frontend/`, then open http://127.0.0.1:5173. See [Frontend/README.md](Frontend/README.md) for setup, demo behavior, verification, and backend integration. The response shapes expected by the frontend are documented in [docs/api-contract.md](docs/api-contract.md).
 
 **Project:** Cloud-Based CSV Dataset Validation and Quality Reporting Platform.
+
+**Cloud feature additions:** email verification through SES and account-owned S3 ingestion folders processed through Lambda. See [feature instructions and AWS access restrictions](docs/CLOUD_FEATURES.md) and [implementation status](docs/IMPLEMENTATION_STATUS.md). Rule sets are created manually using the existing editor.
 
 **Stack:** React + Vite; Python 3.12 + FastAPI; PostgreSQL locally and Amazon RDS in AWS; EC2; S3; SQS; SNS; custom VPC; IAM; Systems Manager Parameter Store; CloudWatch; AWS Budgets.
 

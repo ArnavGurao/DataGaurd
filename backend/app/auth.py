@@ -130,4 +130,6 @@ def get_current_user(
     if user is None:
         # Token is well-formed but the account is gone.
         raise ApiError(401, CODE_UNAUTHORIZED, "Invalid authentication token.")
+    if get_settings().email_verification_required and not user.email_verified_at:
+        raise ApiError(403, "EMAIL_NOT_VERIFIED", "Verify your email before using your workspace.")
     return user

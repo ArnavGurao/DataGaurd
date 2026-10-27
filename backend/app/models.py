@@ -80,6 +80,11 @@ class User(Base):
     #: Stored lowercase and trimmed; uniqueness is enforced on that form.
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verification_digest: Mapped[str | None] = mapped_column(String(64))
+    verification_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verification_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verification_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -211,3 +216,22 @@ class NotificationEvent(Base):
             "status IN ('PENDING', 'SENT', 'FAILED')", name="ck_notification_events_status"
         ),
     )
+
+
+class IngestionSource(Base):
+    __tablename__ = "ingestion_sources"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    rule_set_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("rule_sets.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class IngestionReceipt(Base):
+    """One immutable S3 version creates at most one job, including on retries."""
+    __tablename__ = "ingestion_receipts"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("ingestion_sources.id"), nullable=False)
+    job_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("jobs.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

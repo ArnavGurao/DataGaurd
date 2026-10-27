@@ -29,7 +29,7 @@ function draftFrom(rule) {
     required_columns: r.required_columns.join(', '),
     required_values: r.required_values.join(', '),
     unique_columns: r.unique_columns.join(', '),
-    numeric: Object.entries(r.numeric_ranges).map(([column, range]) => ({ column, ...range })),
+    numeric: Object.entries(r.numeric_ranges).map(([column, range]) => ({ column, min: '', max: '', integer: false, ...range })),
     allowed: Object.entries(r.allowed_values).map(([column, values]) => ({
       column,
       values: values.join(', '),
@@ -126,7 +126,7 @@ export function Rules() {
           checks used at upload.
         </p>
       </div>
-      {editor && <RuleEditor source={editor.id ? editor : null} onClose={() => setEditor(null)} />}
+      {editor && <RuleEditor source={editor.rules ? editor : null} onClose={() => setEditor(null)} />}
       {view && (
         <Modal title={view.name} onClose={() => setView(null)}>
           <div className="modal-body">
@@ -165,7 +165,7 @@ export function RuleSummary({ rules }) {
       <dd>
         {Object.entries(rules.numeric_ranges).map(([col, r]) => (
           <div key={col}>
-            <code>{col}</code>: {r.min}–{r.max}
+            <code>{col}</code>: {r.min ?? 'No lower bound'} – {r.max ?? 'No upper bound'}
             {r.integer ? ' · Whole numbers only' : ''}
           </div>
         ))}
@@ -205,8 +205,8 @@ function RuleEditor({ source, onClose }) {
         if (columns.some((c) => !c) || new Set(columns).size !== columns.length)
           throw new Error('Each rule needs a unique, nonblank column name within its check type.');
       }
-      if (draft.numeric.some((r) => r.min === '' || r.max === ''))
-        throw new Error('Set both numeric bounds.');
+      if (draft.numeric.some((r) => r.min === '' && r.max === ''))
+        throw new Error('Set at least one numeric bound.');
       const rules = validateRules({
         required_columns: split(draft.required_columns),
         required_values: split(draft.required_values),
@@ -214,7 +214,7 @@ function RuleEditor({ source, onClose }) {
         numeric_ranges: Object.fromEntries(
           draft.numeric.map((r) => [
             r.column.trim(),
-            { min: Number(r.min), max: Number(r.max), integer: r.integer },
+            { ...(r.min !== '' ? { min: Number(r.min) } : {}), ...(r.max !== '' ? { max: Number(r.max) } : {}), integer: r.integer },
           ]),
         ),
         allowed_values: Object.fromEntries(
@@ -305,7 +305,6 @@ function RuleEditor({ source, onClose }) {
             <label className="field">
               Min
               <input
-                required
                 type="number"
                 step="any"
                 value={r.min}
@@ -315,7 +314,6 @@ function RuleEditor({ source, onClose }) {
             <label className="field">
               Max
               <input
-                required
                 type="number"
                 step="any"
                 value={r.max}

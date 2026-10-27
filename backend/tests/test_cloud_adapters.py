@@ -81,6 +81,7 @@ def test_s3_adapter_uses_bucket_and_preserves_download_filename(monkeypatch):
         "delete_object",
     ]
     presign = client.calls[3][1]
+    assert client.calls[0][1]["ContentType"] == "text/csv"
     assert presign["Params"]["ResponseContentDisposition"] == 'attachment; filename="name.csv"'
 
 
